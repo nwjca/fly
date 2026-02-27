@@ -1,0 +1,577 @@
+-- 加载 WindUI 库
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+WindUI.TransparencyValue = 0.2
+WindUI:SetTheme("Dark")
+
+-- 创建主窗口
+local Window = WindUI:CreateWindow({
+    Title = "农民飞行",
+    Icon = "bird",
+    Author = "Crim",
+    Folder = "Skeet",
+    Size = UDim2.fromOffset(700, 500),
+    Theme = "Dark",
+    SideBarWidth = 220,
+    ScrollBarEnabled = true
+})
+
+-- ========== 绕过检测（去除 warn 声音）==========
+local function isAdonisAC(table)
+    return rawget(table, "Detected")
+        and typeof(rawget(table, "Detected")) == "function"
+        and rawget(table, "RLocked")
+end
+
+for _, v in next, getgc(true) do
+    if typeof(v) == "table" and isAdonisAC(v) then
+        for i, v in next, v do
+            if rawequal(i, "Detected") then
+                local old
+                old = hookfunction(v, function(action, info, crash)
+                    if rawequal(action, "_") and rawequal(info, "_") and rawequal(crash, false) then
+                        return old(action, info, crash)
+                    end
+                    return task.wait(9e9)
+                end)
+                break
+            end
+        end
+    end
+end
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = { ... }
+    if getnamecallmethod() == "FireServer" and not checkcaller() and args[1] == "FlllD" and args[4] == false then
+        args[2] = 0
+        args[3] = 0
+    end
+    return oldNamecall(self, unpack(args))
+end)
+-- ============================================================
+
+-- ========== 公共服务 ==========
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+
+-- ========== 飞行模块 1：普通飞行（每帧更新 + 网络事件）==========
+local normalFly = {
+    enabled = false,
+    speed = 45
+}
+
+local function setupNormalFly()
+    local character = player.Character
+    if not character then return end
+    
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    local function flyUpdate()
+        while normalFly.enabled and rootPart and humanoid and humanoid.Health > 0 do
+            local cam = workspace.CurrentCamera
+            local camCF = cam.CFrame
+            local lookVector = camCF.LookVector
+            local moveDirection = Vector3.new(lookVector.X, lookVector.Y, lookVector.Z).Unit
+            
+            rootPart.Velocity = moveDirection * normalFly.speed
+            
+            -- 发送网络事件
+            local args = {
+                "__---r",
+                Vector3.zero,
+                CFrame.new(-4574, 3, -443, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+                false
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("__RZDONL"):FireServer(unpack(args))
+            
+            RunService.Heartbeat:Wait()
+        end
+    end
+    
+    if normalFly.enabled then
+        humanoid.PlatformStand = true
+        coroutine.wrap(flyUpdate)()
+    end
+end
+
+local function stopNormalFly()
+    normalFly.enabled = false
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        if rootPart then
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    if normalFly.enabled then
+        task.wait(1)
+        setupNormalFly()
+    else
+        stopNormalFly()
+    end
+end)
+
+player.CharacterRemoving:Connect(function()
+    stopNormalFly()
+end)
+
+-- ========== 飞行模块 2：防攻击飞行（每秒更新，无网络事件）==========
+local antiFly = {
+    enabled = false,
+    speed = 45
+}
+
+local function setupAntiFly()
+    local character = player.Character
+    if not character then return end
+    
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    local function flyUpdate()
+        while antiFly.enabled and rootPart and humanoid and humanoid.Health > 0 do
+            local cam = workspace.CurrentCamera
+            local camCF = cam.CFrame
+            local lookVector = camCF.LookVector
+            local moveDirection = Vector3.new(lookVector.X, lookVector.Y, lookVector.Z).Unit
+            
+            rootPart.Velocity = moveDirection * antiFly.speed
+            
+            -- 每秒更新
+            task.wait(1)
+        end
+    end
+    
+    if antiFly.enabled then
+        humanoid.PlatformStand = true
+        coroutine.wrap(flyUpdate)()
+    end
+end
+
+local function stopAntiFly()
+    antiFly.enabled = false
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        if rootPart then
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    if antiFly.enabled then
+        task.wait(1)
+        setupAntiFly()
+    else
+        stopAntiFly()
+    end
+end)
+
+player.CharacterRemoving:Connect(function()
+    stopAntiFly()
+end)
+
+-- ========== 飞行模块 3：预防飞行（组合模式，每0.1秒更新，无网络事件，默认速度32）==========
+local preventFly = {
+    enabled = false,
+    speed = 32
+}
+
+local function setupPreventFly()
+    local character = player.Character
+    if not character then return end
+    
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    local function flyUpdate()
+        while preventFly.enabled and rootPart and humanoid and humanoid.Health > 0 do
+            local cam = workspace.CurrentCamera
+            local camCF = cam.CFrame
+            local lookVector = camCF.LookVector
+            local moveDirection = Vector3.new(lookVector.X, lookVector.Y, lookVector.Z).Unit
+            
+            rootPart.Velocity = moveDirection * preventFly.speed
+            
+            -- 每0.1秒更新
+            task.wait(0.1)
+        end
+    end
+    
+    if preventFly.enabled then
+        humanoid.PlatformStand = true
+        coroutine.wrap(flyUpdate)()
+    end
+end
+
+local function stopPreventFly()
+    preventFly.enabled = false
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        if rootPart then
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    if preventFly.enabled then
+        task.wait(1)
+        setupPreventFly()
+    else
+        stopPreventFly()
+    end
+end)
+
+player.CharacterRemoving:Connect(function()
+    stopPreventFly()
+end)
+
+-- ========== 飞行模块 4：检测物品飞行（每帧更新 + 网络事件，与普通飞行相同）==========
+local detectItemFly = {
+    enabled = false,
+    speed = 45
+}
+
+local function setupDetectItemFly()
+    local character = player.Character
+    if not character then return end
+    
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    local function flyUpdate()
+        while detectItemFly.enabled and rootPart and humanoid and humanoid.Health > 0 do
+            local cam = workspace.CurrentCamera
+            local camCF = cam.CFrame
+            local lookVector = camCF.LookVector
+            local moveDirection = Vector3.new(lookVector.X, lookVector.Y, lookVector.Z).Unit
+            
+            rootPart.Velocity = moveDirection * detectItemFly.speed
+            
+            -- 发送网络事件（与普通飞行完全一致）
+            local args = {
+                "__---r",
+                Vector3.zero,
+                CFrame.new(-4574, 3, -443, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+                false
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("__RZDONL"):FireServer(unpack(args))
+            
+            RunService.Heartbeat:Wait()
+        end
+    end
+    
+    if detectItemFly.enabled then
+        humanoid.PlatformStand = true
+        coroutine.wrap(flyUpdate)()
+    end
+end
+
+local function stopDetectItemFly()
+    detectItemFly.enabled = false
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        if rootPart then
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    if detectItemFly.enabled then
+        task.wait(1)
+        setupDetectItemFly()
+    else
+        stopDetectItemFly()
+    end
+end)
+
+player.CharacterRemoving:Connect(function()
+    stopDetectItemFly()
+end)
+
+-- ========== 创建标签页：飞行（普通）==========
+local FlyTab = Window:Tab({
+    Title = "飞行",
+    Icon = "plane",
+    Locked = false
+})
+
+local normalToggle = FlyTab:Toggle({
+    Title = "启用飞行",
+    Desc = "自由飞行（每帧更新 + 网络事件）",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(state)
+        normalFly.enabled = state
+        if state then
+            setupNormalFly()
+            WindUI:Notify({
+                Title = "飞行",
+                Content = "飞行已启用（普通模式）",
+                Icon = "check",
+                Duration = 2
+            })
+        else
+            stopNormalFly()
+            WindUI:Notify({
+                Title = "飞行",
+                Content = "飞行已禁用",
+                Icon = "x",
+                Duration = 2
+            })
+        end
+    end
+})
+
+FlyTab:Slider({
+    Title = "飞行速度",
+    Step = 1,
+    Value = {
+        Min = 10,
+        Max = 200,
+        Default = 45,
+    },
+    Callback = function(value)
+        normalFly.speed = value
+    end
+})
+
+-- ========== 创建标签页：防攻击飞行 ==========
+local AntiFlyTab = Window:Tab({
+    Title = "防攻击飞行",
+    Icon = "shield",
+    Locked = false
+})
+
+local antiToggle = AntiFlyTab:Toggle({
+    Title = "启用防攻击飞行",
+    Desc = "防攻击模式（每秒更新，无网络事件）",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(state)
+        antiFly.enabled = state
+        if state then
+            setupAntiFly()
+            WindUI:Notify({
+                Title = "防攻击飞行",
+                Content = "防攻击飞行已启用",
+                Icon = "check",
+                Duration = 2
+            })
+        else
+            stopAntiFly()
+            WindUI:Notify({
+                Title = "防攻击飞行",
+                Content = "防攻击飞行已禁用",
+                Icon = "x",
+                Duration = 2
+            })
+        end
+    end
+})
+
+AntiFlyTab:Slider({
+    Title = "飞行速度",
+    Step = 1,
+    Value = {
+        Min = 10,
+        Max = 200,
+        Default = 45,
+    },
+    Callback = function(value)
+        antiFly.speed = value
+    end
+})
+
+-- ========== 创建标签页：预防飞行 ==========
+local PreventFlyTab = Window:Tab({
+    Title = "预防飞行",
+    Icon = "zap",
+    Locked = false
+})
+
+local preventToggle = PreventFlyTab:Toggle({
+    Title = "启用预防飞行",
+    Desc = "组合模式：无网络事件，每0.1秒更新",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(state)
+        preventFly.enabled = state
+        if state then
+            setupPreventFly()
+            WindUI:Notify({
+                Title = "预防飞行",
+                Content = "预防飞行已启用（组合模式）",
+                Icon = "check",
+                Duration = 2
+            })
+        else
+            stopPreventFly()
+            WindUI:Notify({
+                Title = "预防飞行",
+                Content = "预防飞行已禁用",
+                Icon = "x",
+                Duration = 2
+            })
+        end
+    end
+})
+
+PreventFlyTab:Slider({
+    Title = "飞行速度",
+    Step = 1,
+    Value = {
+        Min = 10,
+        Max = 200,
+        Default = 32,
+    },
+    Callback = function(value)
+        preventFly.speed = value
+    end
+})
+
+-- ========== 创建标签页：检测物品飞行 ==========
+local DetectItemTab = Window:Tab({
+    Title = "检测物品飞行",
+    Icon = "package",
+    Locked = false
+})
+
+local detectToggle = DetectItemTab:Toggle({
+    Title = "启用检测物品飞行",
+    Desc = "完全复制普通飞行（每帧更新 + 网络事件）",
+    Type = "Checkbox",
+    Default = false,
+    Callback = function(state)
+        detectItemFly.enabled = state
+        if state then
+            setupDetectItemFly()
+            WindUI:Notify({
+                Title = "检测物品飞行",
+                Content = "检测物品飞行已启用",
+                Icon = "check",
+                Duration = 2
+            })
+        else
+            stopDetectItemFly()
+            WindUI:Notify({
+                Title = "检测物品飞行",
+                Content = "检测物品飞行已禁用",
+                Icon = "x",
+                Duration = 2
+            })
+        end
+    end
+})
+
+DetectItemTab:Slider({
+    Title = "飞行速度",
+    Step = 1,
+    Value = {
+        Min = 10,
+        Max = 200,
+        Default = 45,
+    },
+    Callback = function(value)
+        detectItemFly.speed = value
+    end
+})
+
+-- ========== 新增：公告标签页（包含外部脚本执行按钮）==========
+local AnnouncementTab = Window:Tab({
+    Title = "公告",
+    Icon = "bell",  -- 使用铃铛图标表示公告
+    Locked = false
+})
+
+AnnouncementTab:Button({
+    Title = "执行地主飞行脚本",
+    Desc = "点击加载并运行外部脚本",
+    Callback = function()
+        local success, result = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/BZD12337/Roblox/refs/heads/main/%E5%9C%B0%E4%B8%BB%E9%A3%9E%E8%A1%8C.txt", true))()
+        end)
+        if success then
+            WindUI:Notify({
+                Title = "公告",
+                Content = "脚本执行成功",
+                Icon = "check",
+                Duration = 2
+            })
+        else
+            WindUI:Notify({
+                Title = "公告",
+                Content = "脚本执行失败: " .. tostring(result),
+                Icon = "alert-circle",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- ========== 添加快捷键支持 ==========
+-- 定义快捷键映射 (可根据需要修改键位)
+local keyMap = {
+    normal = Enum.KeyCode.W,      -- 普通飞行
+    anti = Enum.KeyCode.S,        -- 防攻击飞行
+    prevent = Enum.KeyCode.F,      -- 预防飞行
+    detect = Enum.KeyCode.G        -- 检测物品飞行
+}
+
+-- 监听按键事件
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    -- 如果输入已被游戏处理（如聊天输入）则忽略
+    if gameProcessed then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+    local key = input.KeyCode
+
+    -- 普通飞行 (W)
+    if key == keyMap.normal then
+        normalToggle:SetValue(not normalFly.enabled)
+    -- 防攻击飞行 (S)
+    elseif key == keyMap.anti then
+        antiToggle:SetValue(not antiFly.enabled)
+    -- 预防飞行 (F)
+    elseif key == keyMap.prevent then
+        preventToggle:SetValue(not preventFly.enabled)
+    -- 检测物品飞行 (G)
+    elseif key == keyMap.detect then
+        detectToggle:SetValue(not detectItemFly.enabled)
+    end
+end)
+
+-- 绕过加载提示
+WindUI:Notify({
+    Title = "绕过已加载",
+    Content = "Adonis 绕过 & Namecall 钩子已应用",
+    Duration = 3
+})
